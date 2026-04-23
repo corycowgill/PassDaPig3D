@@ -185,26 +185,25 @@ export function createPigBody(material) {
   return body;
 }
 
-// Given a pig mesh/body in rested state, return a rough orientation bucket.
-// Buckets: 'side-left', 'side-right', 'back', 'feet', 'snout', 'jowl'
-// This uses only the physics body's up-axis projection; rare buckets (snout,
-// jowl) are refined with probability in game.js after physics agrees the pig
-// has settled roughly upright-on-end.
-export function detectBaseOrientation(bodyQuat) {
+// Determine the Pass the Pigs scoring position directly from the physics
+// rest pose. `dotSide` is the side of the pig where the painted dot lives:
+//   'right' → dot on +Z face, 'left' → dot on -Z face.
+// Returns one of:
+//   'side-dot', 'side-plain', 'razorback', 'trotter', 'snouter', 'jowler'
+export function detectPigPosition(bodyQuat, dotSide = 'right') {
   const up = new THREE.Vector3(0, 1, 0);
-  // local axes in world space
-  const localX = new THREE.Vector3(1, 0, 0).applyQuaternion(bodyQuat);
-  const localY = new THREE.Vector3(0, 1, 0).applyQuaternion(bodyQuat);
-  const localZ = new THREE.Vector3(0, 0, 1).applyQuaternion(bodyQuat);
+  const localX = new THREE.Vector3(1, 0, 0).applyQuaternion(bodyQuat); // toward snout
+  const localY = new THREE.Vector3(0, 1, 0).applyQuaternion(bodyQuat); // toward back
+  const localZ = new THREE.Vector3(0, 0, 1).applyQuaternion(bodyQuat); // toward +Z side
 
-  // Determine which local axis is most aligned (or anti-aligned) with world up
+  // Whichever local axis most aligns with world-up is the face that is "up".
   const axes = [
-    { name: 'localY+', v: localY },
-    { name: 'localY-', v: localY.clone().negate() },
-    { name: 'localZ+', v: localZ },
-    { name: 'localZ-', v: localZ.clone().negate() },
-    { name: 'localX+', v: localX },
-    { name: 'localX-', v: localX.clone().negate() },
+    { name: 'Y+', v: localY },
+    { name: 'Y-', v: localY.clone().negate() },
+    { name: 'Z+', v: localZ },
+    { name: 'Z-', v: localZ.clone().negate() },
+    { name: 'X+', v: localX },
+    { name: 'X-', v: localX.clone().negate() },
   ];
   let best = axes[0];
   let bestDot = -Infinity;
@@ -212,14 +211,21 @@ export function detectBaseOrientation(bodyQuat) {
     const d = a.v.dot(up);
     if (d > bestDot) { bestDot = d; best = a; }
   }
-  // Map axis to base bucket
+
+  // Strongly tilted rest (no face flat against the table) → Leaning Jowler.
+  // A clean face-down rest gives dot >= ~0.98; a lean on snout+ear is well
+  // below. Threshold of 0.78 corresponds to a ~38° tilt — steep enough to
+  // filter out near-flat sides while still catching real tripod balances.
+  if (bestDot < 0.78) return 'jowler';
+
+  const dotOnPlusZ = dotSide === 'right';
   switch (best.name) {
-    case 'localY+': return 'feet';   // belly-down, standing-ish
-    case 'localY-': return 'back';   // belly-up (razorback)
-    case 'localZ+': return 'side-right';
-    case 'localZ-': return 'side-left';
-    case 'localX+': return 'snout';  // nose up
-    case 'localX-': return 'tail';   // tail up (treat as back-ish)
-    default: return 'side-right';
+    case 'Y+': return 'trotter';       // belly-down, standing on feet
+    case 'Y-': return 'razorback';     // belly-up, back on table
+    case 'X-': return 'snouter';       // tail-up, balanced on snout
+    case 'X+': return 'razorback';     // tail-down (unstable) — map to back
+    case 'Z+': return dotOnPlusZ ? 'side-dot' : 'side-plain';
+    case 'Z-': return dotOnPlusZ ? 'side-plain' : 'side-dot';
+    default:   return 'side-plain';
   }
 }

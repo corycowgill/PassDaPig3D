@@ -1,4 +1,4 @@
-import { detectBaseOrientation } from './pig.js';
+import { detectPigPosition } from './pig.js';
 
 // Returns true if the two pig bodies' world-axis bounding boxes overlap with
 // a tiny tolerance. Accurate enough to separate "Oinker" from "Pig Out".
@@ -39,62 +39,8 @@ const POINTS = {
   'jowler': 15,
 };
 
-// Approximate real-world Pass the Pigs frequencies (Kern, et al).
-// Used to refine sides/feet/back into their named scoring positions.
-const BASE_WEIGHTS = {
-  'side-dot': 0.349,
-  'side-plain': 0.302,
-  'razorback': 0.224,
-  'trotter': 0.088,
-  'snouter': 0.030,
-  'jowler': 0.0061,
-};
-
-// Weighted pick helper
-function weightedPick(weights) {
-  let total = 0;
-  for (const k in weights) total += weights[k];
-  let r = Math.random() * total;
-  for (const k in weights) {
-    r -= weights[k];
-    if (r <= 0) return k;
-  }
-  return Object.keys(weights)[0];
-}
-
-// Given a base orientation bucket from physics, refine to a scoring position.
-// The physics bucket constrains the subset of weights we sample from so the
-// visual outcome broadly matches the physical roll, while rare results still
-// occur with realistic frequency.
-export function positionFromBase(base) {
-  switch (base) {
-    case 'side-left':
-      return Math.random() < 0.535 ? 'side-dot' : 'side-plain';
-    case 'side-right':
-      return Math.random() < 0.535 ? 'side-plain' : 'side-dot';
-    case 'back':
-      // Razorback dominates; tiny chance of jowler if nose tipped
-      return weightedPick({ razorback: 0.95, jowler: 0.05 });
-    case 'feet': {
-      // Feet-down: trotter most likely; snouter if tipped forward
-      const r = Math.random();
-      if (r < 0.78) return 'trotter';
-      if (r < 0.97) return 'snouter';
-      return 'jowler';
-    }
-    case 'snout':
-      // Nose pointing up-ish: snouter or jowler
-      return Math.random() < 0.7 ? 'snouter' : 'jowler';
-    case 'tail':
-      // Tail-up is unstable; treat as razorback fallback
-      return 'razorback';
-    default:
-      return weightedPick(BASE_WEIGHTS);
-  }
-}
-
 // Evaluate both pigs' final positions and return a scored outcome.
-// Accepts pigStates = [{ position: Vec3, quaternion: Quat, body }]
+// Accepts pigStates = [{ position, quaternion, body, dotSide }]
 // Returns { positions: [p1, p2], name, points, special }
 // special can be: 'pig-out', 'oinker', 'piggyback'
 export function scoreRoll(pigStates) {
@@ -109,15 +55,16 @@ export function scoreRoll(pigStates) {
     return { positions: ['piggyback', 'piggyback'], name: 'Piggy Back!', detail: 'You lose ALL your points.', points: 0, special: 'piggyback' };
   }
 
-  // Special: oinker — pigs actually touching. We check AABB overlap for a
-  // rotation-aware result; a loose distance threshold would steal rolls from
-  // Pig Out (which legitimately places the pigs close but not in contact).
+  // Special: oinker — pigs actually touching. AABB overlap is accurate enough
+  // and avoids stealing Pig Out rolls (pigs can legitimately rest close but
+  // not in contact on opposite sides).
   if (pigsTouching(a.body, b.body)) {
     return { positions: ['oinker', 'oinker'], name: 'Oinker!', detail: 'Pigs touched — you lose ALL your points.', points: 0, special: 'oinker' };
   }
 
-  const p1 = positionFromBase(detectBaseOrientation(a.quaternion));
-  const p2 = positionFromBase(detectBaseOrientation(b.quaternion));
+  // Score each pig directly from its rested physics orientation.
+  const p1 = detectPigPosition(a.quaternion, a.dotSide);
+  const p2 = detectPigPosition(b.quaternion, b.dotSide);
 
   // Pig Out: one on each side (opposite-dot siders).
   const siders = ['side-dot', 'side-plain'];

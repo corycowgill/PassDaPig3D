@@ -161,14 +161,15 @@ export class PigScene {
 
   _buildPigs() {
     for (let i = 0; i < 2; i++) {
-      const mesh = createPigMesh({ dotSide: i === 0 ? 'right' : 'left' });
+      const dotSide = i === 0 ? 'right' : 'left';
+      const mesh = createPigMesh({ dotSide });
       mesh.castShadow = true;
       this.scene.add(mesh);
 
       const body = createPigBody(this.pigMat);
       this.world.addBody(body);
 
-      this.pigs.push({ mesh, body });
+      this.pigs.push({ mesh, body, dotSide });
     }
     this.resetPigs();
   }
@@ -237,11 +238,12 @@ export class PigScene {
 
   // Expose for scoring
   getPigStates() {
-    return this.pigs.map(({ body, mesh }) => ({
+    return this.pigs.map(({ body, mesh, dotSide }) => ({
       position: body.position.clone(),
       quaternion: body.quaternion.clone(),
       mesh,
       body,
+      dotSide,
     }));
   }
 
