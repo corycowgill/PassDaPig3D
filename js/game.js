@@ -1,21 +1,17 @@
 import { detectPigPosition } from './pig.js';
 
-// Returns true if the two pig bodies' world-axis bounding boxes overlap with
-// a tiny tolerance. Accurate enough to separate "Oinker" from "Pig Out".
-function pigsTouching(bodyA, bodyB) {
-  bodyA.computeAABB();
-  bodyB.computeAABB();
-  const a = bodyA.aabb;
-  const b = bodyB.aabb;
-  const eps = 0.02;
-  return (
-    a.lowerBound.x - eps <= b.upperBound.x &&
-    a.upperBound.x + eps >= b.lowerBound.x &&
-    a.lowerBound.y - eps <= b.upperBound.y &&
-    a.upperBound.y + eps >= b.lowerBound.y &&
-    a.lowerBound.z - eps <= b.upperBound.z &&
-    a.upperBound.z + eps >= b.lowerBound.z
-  );
+// Returns true if the two pig bodies are physically touching at rest.
+// Pig body is a 1.6 x 1.05 x 1.0 box + a 0.34m snout sphere; the closest
+// two centers can be without any shape overlap along the shortest (Z)
+// axis is ~1.0, and along the longest (X) axis ~1.6. We use 1.35 as a
+// middle-ground oinker threshold — conservative enough that legitimate
+// close-but-separate Pig Outs are not wiped, forgiving enough to catch
+// real shape contact.
+function pigsTouching(a, b) {
+  const dx = a.position.x - b.position.x;
+  const dy = a.position.y - b.position.y;
+  const dz = a.position.z - b.position.z;
+  return Math.hypot(dx, dy, dz) < 1.35;
 }
 
 // Pass the Pigs single-pig positions.
@@ -55,10 +51,8 @@ export function scoreRoll(pigStates) {
     return { positions: ['piggyback', 'piggyback'], name: 'Piggy Back!', detail: 'You lose ALL your points.', points: 0, special: 'piggyback' };
   }
 
-  // Special: oinker — pigs actually touching. AABB overlap is accurate enough
-  // and avoids stealing Pig Out rolls (pigs can legitimately rest close but
-  // not in contact on opposite sides).
-  if (pigsTouching(a.body, b.body)) {
+  // Special: oinker — pigs in physical contact at rest.
+  if (pigsTouching(a, b)) {
     return { positions: ['oinker', 'oinker'], name: 'Oinker!', detail: 'Pigs touched — you lose ALL your points.', points: 0, special: 'oinker' };
   }
 

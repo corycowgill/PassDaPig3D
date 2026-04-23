@@ -174,7 +174,13 @@ function waitForPigsToRest() {
 
 function onRollResolved() {
   waitingForRest = false;
-  const result = scoreRoll(scene.getPigStates());
+  let result;
+  try {
+    result = scoreRoll(scene.getPigStates());
+  } catch (err) {
+    console.error('scoreRoll failed:', err);
+    result = { positions: ['side-plain', 'side-plain'], name: 'Reroll', detail: 'Scoring hiccup — try again.', points: 0, special: null };
+  }
   const outcome = game.onRollResolved(result);
   ui.flashResult(result, !outcome.busted);
   ui.renderScoreboard(game);

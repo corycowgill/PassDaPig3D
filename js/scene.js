@@ -160,8 +160,12 @@ export class PigScene {
   }
 
   _buildPigs() {
+    // Both pigs must have the painted dot on the same local side for scoring
+    // to work — that way two pigs showing the same face up is a Sider, and
+    // only opposite faces up is a Pig Out. (In the physical game both pigs
+    // are identical.)
     for (let i = 0; i < 2; i++) {
-      const dotSide = i === 0 ? 'right' : 'left';
+      const dotSide = 'right';
       const mesh = createPigMesh({ dotSide });
       mesh.castShadow = true;
       this.scene.add(mesh);
