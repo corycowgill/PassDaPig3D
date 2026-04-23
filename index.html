@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="theme-color" content="#3b2a1a" />
+  <title>Pass Da Pig 3D</title>
+  <link rel="stylesheet" href="css/styles.css" />
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+        "cannon-es": "https://unpkg.com/cannon-es@0.20.0/dist/cannon-es.js"
+      }
+    }
+  </script>
+</head>
+<body>
+  <div id="app">
+    <canvas id="stage"></canvas>
+
+    <!-- Main Menu -->
+    <section id="menu" class="screen">
+      <div class="panel">
+        <h1>Pass Da Pig <span class="accent">3D</span></h1>
+        <p class="tagline">Roll the pigs. Bank your points. First to the finish wins.</p>
+
+        <div class="field">
+          <label>Game Mode</label>
+          <div class="toggle-row" role="radiogroup" aria-label="Game mode">
+            <button class="toggle active" data-mode="ai">1P vs AI</button>
+            <button class="toggle" data-mode="2">2 Players</button>
+            <button class="toggle" data-mode="3">3 Players</button>
+            <button class="toggle" data-mode="4">4 Players</button>
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="target">Target Score</label>
+          <div class="toggle-row" role="radiogroup" aria-label="Target score">
+            <button class="toggle" data-target="50">50</button>
+            <button class="toggle active" data-target="100">100</button>
+            <button class="toggle" data-target="150">150</button>
+          </div>
+        </div>
+
+        <div id="playerNames" class="field"></div>
+
+        <div class="row">
+          <button id="startBtn" class="primary">Start Game</button>
+          <button id="menuHelpBtn" class="ghost">Scoring Guide</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- HUD -->
+    <section id="hud" class="hidden">
+      <div class="hud-top">
+        <div id="scoreboard" class="scoreboard"></div>
+        <button id="helpBtn" class="icon-btn" title="Scoring guide" aria-label="Scoring guide">?</button>
+        <button id="quitBtn" class="icon-btn" title="Quit to menu" aria-label="Quit">&times;</button>
+      </div>
+      <div class="hud-bottom">
+        <div id="turnInfo" class="turn-info">
+          <div class="turn-player"><span id="turnPlayer">Player 1</span><small id="turnStatus">swipe up to roll</small></div>
+          <div class="turn-score"><span class="label">Turn</span><span id="turnScore">0</span></div>
+        </div>
+        <div class="actions">
+          <button id="rollBtn" class="primary big">Roll</button>
+          <button id="bankBtn" class="secondary big" disabled>Bank</button>
+        </div>
+      </div>
+      <div id="rollResult" class="roll-result hidden"></div>
+    </section>
+
+    <!-- Help / Scoring Guide -->
+    <section id="help" class="screen hidden">
+      <div class="panel scroll">
+        <div class="panel-head">
+          <h2>Scoring Guide</h2>
+          <button id="closeHelp" class="icon-btn" aria-label="Close">&times;</button>
+        </div>
+
+        <h3>How to Play</h3>
+        <ul class="rules">
+          <li><b>Swipe up</b> (or click <b>Roll</b>) to fling the pigs.</li>
+          <li>Your <b>turn score</b> adds up as you keep rolling.</li>
+          <li>Press <b>Bank</b> to add the turn score to your total and pass the pigs.</li>
+          <li>First to <b>target score</b> wins. Go over exactly and you win too.</li>
+        </ul>
+
+        <h3>Single Pig Positions</h3>
+        <table class="guide">
+          <tr><th>Position</th><th>Points</th><th>What it looks like</th></tr>
+          <tr><td>Sider</td><td>0</td><td>On its side (scored as a pair)</td></tr>
+          <tr><td>Razorback</td><td>5</td><td>Lying on its back</td></tr>
+          <tr><td>Trotter</td><td>5</td><td>Standing on all four feet</td></tr>
+          <tr><td>Snouter</td><td>10</td><td>Balanced on snout &amp; front legs</td></tr>
+          <tr><td>Leaning Jowler</td><td>15</td><td>Resting on snout, ear &amp; a leg</td></tr>
+        </table>
+
+        <h3>Both Pigs (Combos)</h3>
+        <table class="guide">
+          <tr><th>Combo</th><th>Points</th></tr>
+          <tr><td>Sider (same side)</td><td>1</td></tr>
+          <tr><td>Pig Out (one on each side)</td><td>0 — lose turn score</td></tr>
+          <tr><td>Mixed Combo</td><td>Sum of each pig</td></tr>
+          <tr><td>Double Razorback</td><td>20</td></tr>
+          <tr><td>Double Trotter</td><td>20</td></tr>
+          <tr><td>Double Snouter</td><td>40</td></tr>
+          <tr><td>Double Leaning Jowler</td><td>60</td></tr>
+          <tr><td>Oinker (pigs touching)</td><td>Lose ALL your points</td></tr>
+          <tr><td>Piggy Back (one on top)</td><td>Lose ALL your points</td></tr>
+        </table>
+
+        <h3>Tips</h3>
+        <ul class="rules">
+          <li>A long fast swipe gives more spin and wilder rolls.</li>
+          <li>Push your luck — but a Pig Out costs your whole turn.</li>
+          <li>Use <b>Bank</b> to lock in safe points between rolls.</li>
+        </ul>
+
+        <div class="row">
+          <button id="closeHelp2" class="primary">Got it</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Winner -->
+    <section id="winner" class="screen hidden">
+      <div class="panel celebrate">
+        <h2>🏆 <span id="winnerName">Player 1</span> wins!</h2>
+        <div id="finalScores" class="final-scores"></div>
+        <div class="row">
+          <button id="playAgain" class="primary">Play Again</button>
+          <button id="backToMenu" class="ghost">Main Menu</button>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
