@@ -1,5 +1,23 @@
 import { detectBaseOrientation } from './pig.js';
 
+// Returns true if the two pig bodies' world-axis bounding boxes overlap with
+// a tiny tolerance. Accurate enough to separate "Oinker" from "Pig Out".
+function pigsTouching(bodyA, bodyB) {
+  bodyA.computeAABB();
+  bodyB.computeAABB();
+  const a = bodyA.aabb;
+  const b = bodyB.aabb;
+  const eps = 0.02;
+  return (
+    a.lowerBound.x - eps <= b.upperBound.x &&
+    a.upperBound.x + eps >= b.lowerBound.x &&
+    a.lowerBound.y - eps <= b.upperBound.y &&
+    a.upperBound.y + eps >= b.lowerBound.y &&
+    a.lowerBound.z - eps <= b.upperBound.z &&
+    a.upperBound.z + eps >= b.lowerBound.z
+  );
+}
+
 // Pass the Pigs single-pig positions.
 // 'side-dot' / 'side-plain' are the two sides (one has the printed dot).
 export const POSITIONS = [
@@ -87,13 +105,14 @@ export function scoreRoll(pigStates) {
   const dz = a.position.z - b.position.z;
   const dy = Math.abs(a.position.y - b.position.y);
   const planar = Math.hypot(dx, dz);
-  if (planar < 1.2 && dy > 0.7) {
+  if (planar < 1.1 && dy > 0.7) {
     return { positions: ['piggyback', 'piggyback'], name: 'Piggy Back!', detail: 'You lose ALL your points.', points: 0, special: 'piggyback' };
   }
 
-  // Special: oinker — pigs touching / very close.
-  const dist3 = a.position.distanceTo(b.position);
-  if (dist3 < 1.25) {
+  // Special: oinker — pigs actually touching. We check AABB overlap for a
+  // rotation-aware result; a loose distance threshold would steal rolls from
+  // Pig Out (which legitimately places the pigs close but not in contact).
+  if (pigsTouching(a.body, b.body)) {
     return { positions: ['oinker', 'oinker'], name: 'Oinker!', detail: 'Pigs touched — you lose ALL your points.', points: 0, special: 'oinker' };
   }
 

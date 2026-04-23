@@ -195,21 +195,30 @@ export class PigScene {
 
   // Apply a roll impulse. `direction` is a normalized 2D vector in screen space
   // where +y is "up the screen" (towards far end of table from camera).
-  // `power` in [0, 1]. Adds randomized spin.
+  // `power` in [0, 1]. Adds randomized spin plus per-pig lateral scatter so
+  // the two pigs don't travel in lockstep.
   rollPigs(direction, power) {
     const p = THREE.MathUtils.clamp(power, 0.15, 1);
-    // Map screen direction to world XZ. Screen +y -> world -Z (away from camera)
     const worldDir = new THREE.Vector3(direction.x, 0, -direction.y).normalize();
+    // Lateral axis (perpendicular in the XZ plane) for scatter
+    const lateral = new THREE.Vector3(-worldDir.z, 0, worldDir.x);
     const baseSpeed = 9 + 10 * p;
     const upKick = 3.5 + 4 * p;
 
-    for (const { body } of this.pigs) {
-      const v = worldDir.clone().multiplyScalar(baseSpeed + (Math.random() - 0.5) * 2);
+    for (let i = 0; i < this.pigs.length; i++) {
+      const { body } = this.pigs[i];
+      // Outward lateral kick: pig 0 goes left, pig 1 goes right (of travel dir)
+      const sideSign = i === 0 ? -1 : 1;
+      const sideSpread = (1.2 + Math.random() * 1.8) * sideSign;
+      const forwardVar = (Math.random() - 0.5) * 2.5;
+
+      const v = worldDir.clone().multiplyScalar(baseSpeed + forwardVar)
+        .addScaledVector(lateral, sideSpread);
       body.velocity.set(v.x, upKick + Math.random() * 1.5, v.z);
       body.angularVelocity.set(
-        (Math.random() - 0.5) * (10 + 20 * p),
-        (Math.random() - 0.5) * (5 + 10 * p),
-        (Math.random() - 0.5) * (12 + 25 * p)
+        (Math.random() - 0.5) * (12 + 22 * p),
+        (Math.random() - 0.5) * (6 + 12 * p),
+        (Math.random() - 0.5) * (14 + 26 * p)
       );
       body.wakeUp();
     }
