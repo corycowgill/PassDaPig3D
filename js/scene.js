@@ -254,12 +254,22 @@ export class PigScene {
   // Returns true when both pigs have essentially stopped moving.
   pigsAtRest() {
     for (const { body } of this.pigs) {
-      if (body.velocity.length() > 0.25) return false;
-      if (body.angularVelocity.length() > 0.25) return false;
+      if (body.velocity.length() > 0.18) return false;
+      if (body.angularVelocity.length() > 0.18) return false;
       // also ensure they're near the table, not airborne
-      if (body.position.y > 2.0 && body.velocity.length() > 0.05) return false;
+      if (body.position.y > 2.0 && body.velocity.length() > 0.04) return false;
     }
     return true;
+  }
+
+  // Forcibly halt the pigs and put them to sleep. Used as a safety net when
+  // the rest-detection loop times out so scoring reads a stable orientation.
+  forceSleepPigs() {
+    for (const { body } of this.pigs) {
+      body.velocity.setZero();
+      body.angularVelocity.setZero();
+      body.sleep();
+    }
   }
 
   // Expose for scoring

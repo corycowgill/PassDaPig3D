@@ -129,14 +129,31 @@ export function createPigMesh({ dotSide = 'right' } = {}) {
   tail.userData.tintable = 'accent';
   group.add(tail);
 
-  // Dot on side (for "Sider" flavor) — a flat disc.
+  // Big painted dot on one side. Sized so the player can clearly tell at a
+  // glance whether the dot side or the plain side landed up — small enough
+  // not to wrap around the curvature, large enough to read across the table.
   if (dotSide) {
-    const dotGeom = new THREE.CircleGeometry(0.12, 16);
-    const dotMat = mat(DOT, { roughness: 1 });
-    const dot = new THREE.Mesh(dotGeom, dotMat);
     const zSign = dotSide === 'left' ? -1 : 1;
-    dot.position.set(0.05, -0.05, zSign * (PIG.bodyW * 0.49));
+    const surfaceZ = zSign * (PIG.bodyW * 0.495);
+
+    // Faint outer halo so the dot reads from any camera angle.
+    const halo = new THREE.Mesh(
+      new THREE.CircleGeometry(0.32, 24),
+      mat(0xffe9d1, { roughness: 1, transparent: true, opacity: 0.55 })
+    );
+    halo.position.set(0.05, -0.05, surfaceZ);
+    halo.rotation.y = zSign > 0 ? Math.PI / 2 : -Math.PI / 2;
+    halo.position.z += zSign * 0.001;
+    group.add(halo);
+
+    // Bold dark spot.
+    const dot = new THREE.Mesh(
+      new THREE.CircleGeometry(0.24, 24),
+      mat(DOT, { roughness: 1 })
+    );
+    dot.position.set(0.05, -0.05, surfaceZ);
     dot.rotation.y = zSign > 0 ? Math.PI / 2 : -Math.PI / 2;
+    dot.position.z += zSign * 0.002;
     group.add(dot);
   }
 
@@ -160,52 +177,37 @@ export function tintPig(group, tint) {
   });
 }
 
-// Compound physics body shaped like the pig: a slim core box (so faces can
-// still rest stably for Razorback/Trotter/Sider scoring) wrapped by rounded
-// caps at the rump, midriff, head, and snout. The curved surfaces let the
-// pig tumble end-over-end naturally instead of slamming flat like a brick.
+// Physics body. A near-full-size core box does the heavy lifting so the pig
+// rests cleanly on its faces (sides → Sider, top → Razorback, bottom →
+// Trotter). A single snout sphere out front sticks past the box so the pig
+// tips forward during tumble and Snouter is physically reachable. Earlier
+// versions wrapped the box in big rump/shoulder spheres, but those caps
+// extended beyond every box face and the pig perched on sphere curves at
+// rest — most rolls came out as Leaning Jowler instead of clean siders.
 export function createPigBody(material) {
   const body = new CANNON.Body({
     mass: 0.75,
     material,
-    angularDamping: 0.04,
-    linearDamping: 0.08,
+    angularDamping: 0.06,
+    linearDamping: 0.10,
     allowSleep: true,
     sleepSpeedLimit: 0.28,
-    sleepTimeLimit: 0.4,
+    sleepTimeLimit: 0.35,
   });
 
-  // Narrow core so the rounded caps make most of the table contacts.
   const coreHalf = new CANNON.Vec3(
-    PIG.bodyLen * 0.30,
-    PIG.bodyH * 0.42,
-    PIG.bodyW * 0.40
+    PIG.bodyLen * 0.46,
+    PIG.bodyH * 0.46,
+    PIG.bodyW * 0.46
   );
   body.addShape(new CANNON.Box(coreHalf));
 
-  // Rear cap (the rump).
+  // Snout sphere placed past the front face of the box so it never lifts
+  // the body off a face during a clean rest.
+  const snoutOffsetX = PIG.bodyLen * 0.46 + PIG.snoutR * 0.6;
   body.addShape(
-    new CANNON.Sphere(PIG.bodyW * 0.45),
-    new CANNON.Vec3(-PIG.bodyLen * 0.32, 0, 0)
-  );
-
-  // Mid/front body cap (where head meets shoulders).
-  body.addShape(
-    new CANNON.Sphere(PIG.bodyW * 0.50),
-    new CANNON.Vec3(PIG.bodyLen * 0.18, 0, 0)
-  );
-
-  // Head.
-  body.addShape(
-    new CANNON.Sphere(PIG.headR * 0.85),
-    new CANNON.Vec3(PIG.bodyLen * 0.42, 0.05, 0)
-  );
-
-  // Snout — small sphere out in front. Asymmetry here is what gives the pig
-  // its characteristic uneven tumble and makes Snouter physically possible.
-  body.addShape(
-    new CANNON.Sphere(PIG.snoutR * 0.95),
-    new CANNON.Vec3(PIG.bodyLen * 0.42 + PIG.headR * 0.82, -0.04, 0)
+    new CANNON.Sphere(PIG.snoutR),
+    new CANNON.Vec3(snoutOffsetX, -0.05, 0)
   );
 
   return body;
@@ -239,10 +241,11 @@ export function detectPigPosition(bodyQuat, dotSide = 'right') {
   }
 
   // Strongly tilted rest (no face flat against the table) → Leaning Jowler.
-  // A clean face-down rest gives dot >= ~0.98; a lean on snout+ear is well
-  // below. Threshold of 0.78 corresponds to a ~38° tilt — steep enough to
-  // filter out near-flat sides while still catching real tripod balances.
-  if (bestDot < 0.78) return 'jowler';
+  // A clean face-down rest gives dot >= ~0.98; a real snout+ear+leg lean
+  // is well below 0.7. Threshold 0.70 corresponds to a ~45° tilt — only
+  // genuinely diagonal rests qualify, so normal sides aren't sniped into
+  // jowlers when the pig settles with a small wobble.
+  if (bestDot < 0.70) return 'jowler';
 
   const dotOnPlusZ = dotSide === 'right';
   switch (best.name) {
