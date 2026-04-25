@@ -160,27 +160,53 @@ export function tintPig(group, tint) {
   });
 }
 
-// Create the cannon-es physics body for a pig. Simple compound of a box + sphere
-// (snout) — good enough for lively physics while keeping detection reliable via
-// post-rest orientation sampling.
+// Compound physics body shaped like the pig: a slim core box (so faces can
+// still rest stably for Razorback/Trotter/Sider scoring) wrapped by rounded
+// caps at the rump, midriff, head, and snout. The curved surfaces let the
+// pig tumble end-over-end naturally instead of slamming flat like a brick.
 export function createPigBody(material) {
   const body = new CANNON.Body({
-    mass: 0.9,
+    mass: 0.75,
     material,
-    angularDamping: 0.18,
-    linearDamping: 0.12,
+    angularDamping: 0.04,
+    linearDamping: 0.08,
     allowSleep: true,
-    sleepSpeedLimit: 0.25,
-    sleepTimeLimit: 0.3,
+    sleepSpeedLimit: 0.28,
+    sleepTimeLimit: 0.4,
   });
 
-  // Core body box
-  const halfBody = new CANNON.Vec3(PIG.bodyLen / 2, PIG.bodyH / 2, PIG.bodyW / 2);
-  body.addShape(new CANNON.Box(halfBody));
+  // Narrow core so the rounded caps make most of the table contacts.
+  const coreHalf = new CANNON.Vec3(
+    PIG.bodyLen * 0.30,
+    PIG.bodyH * 0.42,
+    PIG.bodyW * 0.40
+  );
+  body.addShape(new CANNON.Box(coreHalf));
 
-  // Snout sphere (front)
-  const snoutShape = new CANNON.Sphere(PIG.snoutR + 0.02);
-  body.addShape(snoutShape, new CANNON.Vec3(PIG.bodyLen * 0.42 + PIG.headR * 0.82, -0.02, 0));
+  // Rear cap (the rump).
+  body.addShape(
+    new CANNON.Sphere(PIG.bodyW * 0.45),
+    new CANNON.Vec3(-PIG.bodyLen * 0.32, 0, 0)
+  );
+
+  // Mid/front body cap (where head meets shoulders).
+  body.addShape(
+    new CANNON.Sphere(PIG.bodyW * 0.50),
+    new CANNON.Vec3(PIG.bodyLen * 0.18, 0, 0)
+  );
+
+  // Head.
+  body.addShape(
+    new CANNON.Sphere(PIG.headR * 0.85),
+    new CANNON.Vec3(PIG.bodyLen * 0.42, 0.05, 0)
+  );
+
+  // Snout — small sphere out in front. Asymmetry here is what gives the pig
+  // its characteristic uneven tumble and makes Snouter physically possible.
+  body.addShape(
+    new CANNON.Sphere(PIG.snoutR * 0.95),
+    new CANNON.Vec3(PIG.bodyLen * 0.42 + PIG.headR * 0.82, -0.04, 0)
+  );
 
   return body;
 }

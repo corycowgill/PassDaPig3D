@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import * as CANNON from 'cannon-es';
-import { createPigMesh, createPigBody, PIG } from './pig.js';
+import { createPigMesh, createPigBody } from './pig.js';
 
 const FELT_SIZE = 22;   // length of square felt
 const WALL_H = 1.5;
@@ -116,23 +116,28 @@ export class PigScene {
   }
 
   _buildPhysics() {
-    this.world = new CANNON.World({ gravity: new CANNON.Vec3(0, -22, 0) });
+    // Gravity slightly heavier than Earth so rolls settle quickly without
+    // floaty hangtime, but light enough that the pigs can actually tumble
+    // a few times after landing.
+    this.world = new CANNON.World({ gravity: new CANNON.Vec3(0, -14, 0) });
     this.world.broadphase = new CANNON.SAPBroadphase(this.world);
     this.world.allowSleep = true;
-    this.world.defaultContactMaterial.friction = 0.35;
-    this.world.defaultContactMaterial.restitution = 0.35;
+    this.world.defaultContactMaterial.friction = 0.3;
+    this.world.defaultContactMaterial.restitution = 0.2;
 
     // Ground
     const groundMat = new CANNON.Material('ground');
     this.pigMat = new CANNON.Material('pig');
 
+    // Felt is grippy enough to convert linear motion into tumble, not so
+    // bouncy that pigs jackrabbit across the table.
     const pigGround = new CANNON.ContactMaterial(this.pigMat, groundMat, {
-      friction: 0.45,
-      restitution: 0.28,
+      friction: 0.55,
+      restitution: 0.12,
     });
     const pigPig = new CANNON.ContactMaterial(this.pigMat, this.pigMat, {
-      friction: 0.3,
-      restitution: 0.32,
+      friction: 0.35,
+      restitution: 0.18,
     });
     this.world.addContactMaterial(pigGround);
     this.world.addContactMaterial(pigPig);
@@ -178,11 +183,13 @@ export class PigScene {
     this.resetPigs();
   }
 
-  // Place pigs on the near side of the table ready to be flung.
+  // Place pigs on the near side of the table ready to be flung. Slight
+  // random tilt so the throw doesn't always start from the same pose —
+  // gives the rolls some character right out of the cup.
   resetPigs() {
-    const startZ = 7.5; // near the player
-    const startY = PIG.bodyH + 0.6;
-    const separation = 1.6;
+    const startZ = 7.5;
+    const startY = 1.1;
+    const separation = 1.7;
     for (let i = 0; i < this.pigs.length; i++) {
       const { body } = this.pigs[i];
       body.velocity.setZero();
@@ -190,41 +197,56 @@ export class PigScene {
       body.force.setZero();
       body.torque.setZero();
       body.position.set((i === 0 ? -1 : 1) * (separation / 2), startY, startZ);
-      // Yaw them to face roughly forward (-Z), small random to feel alive
       const q = new CANNON.Quaternion();
-      q.setFromEuler(0, Math.PI + (Math.random() - 0.5) * 0.3, 0);
+      q.setFromEuler(
+        (Math.random() - 0.5) * 0.5,
+        Math.PI + (Math.random() - 0.5) * 0.6,
+        (Math.random() - 0.5) * 0.5
+      );
       body.quaternion.copy(q);
       body.wakeUp();
     }
   }
 
-  // Apply a roll impulse. `direction` is a normalized 2D vector in screen space
-  // where +y is "up the screen" (towards far end of table from camera).
-  // `power` in [0, 1]. Adds randomized spin plus per-pig lateral scatter so
-  // the two pigs don't travel in lockstep.
+  // Apply a throw. `direction` is a normalized 2D vector in screen space
+  // where +y is "up the screen" (towards the far rail). `power` in [0, 1].
+  //
+  // The throw puts most of the angular momentum into a forward "topspin"
+  // (rotation around the horizontal axis perpendicular to the throw),
+  // which is how a pig leaves the cup tumbling end-over-end. A small
+  // wobble is layered on so the two pigs diverge and rare poses (snouter,
+  // jowler) become physically reachable.
   rollPigs(direction, power) {
     const p = THREE.MathUtils.clamp(power, 0.15, 1);
     const worldDir = new THREE.Vector3(direction.x, 0, -direction.y).normalize();
-    // Lateral axis (perpendicular in the XZ plane) for scatter
-    const lateral = new THREE.Vector3(-worldDir.z, 0, worldDir.x);
-    const baseSpeed = 9 + 10 * p;
-    const upKick = 3.5 + 4 * p;
+    // Horizontal axis perpendicular to the throw → "tumble axis".
+    const tumbleAxis = new THREE.Vector3()
+      .crossVectors(new THREE.Vector3(0, 1, 0), worldDir)
+      .normalize();
+    // Rightward axis used to scatter the two pigs apart in flight.
+    const lateral = new THREE.Vector3(-worldDir.z, 0, worldDir.x).normalize();
+
+    const baseSpeed = 6.5 + 6.5 * p;
+    const upKick = 3.0 + 2.6 * p;
+    const tumble = 9 + 14 * p;
+    const wobble = 2 + 5 * p;
 
     for (let i = 0; i < this.pigs.length; i++) {
       const { body } = this.pigs[i];
-      // Outward lateral kick: pig 0 goes left, pig 1 goes right (of travel dir)
       const sideSign = i === 0 ? -1 : 1;
-      const sideSpread = (1.2 + Math.random() * 1.8) * sideSign;
-      const forwardVar = (Math.random() - 0.5) * 2.5;
+      const sideSpread = sideSign * (0.8 + Math.random() * 1.2);
+      const forwardVar = (Math.random() - 0.5) * 1.4;
 
-      const v = worldDir.clone().multiplyScalar(baseSpeed + forwardVar)
+      const v = worldDir.clone()
+        .multiplyScalar(baseSpeed + forwardVar)
         .addScaledVector(lateral, sideSpread);
-      body.velocity.set(v.x, upKick + Math.random() * 1.5, v.z);
-      body.angularVelocity.set(
-        (Math.random() - 0.5) * (12 + 22 * p),
-        (Math.random() - 0.5) * (6 + 12 * p),
-        (Math.random() - 0.5) * (14 + 26 * p)
-      );
+      body.velocity.set(v.x, upKick + (Math.random() - 0.5) * 0.6, v.z);
+
+      const ang = tumbleAxis.clone().multiplyScalar(tumble * (0.85 + Math.random() * 0.3));
+      ang.x += (Math.random() - 0.5) * wobble;
+      ang.y += (Math.random() - 0.5) * wobble * 0.6;
+      ang.z += (Math.random() - 0.5) * wobble;
+      body.angularVelocity.set(ang.x, ang.y, ang.z);
       body.wakeUp();
     }
   }
