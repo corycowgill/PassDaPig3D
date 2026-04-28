@@ -1,17 +1,16 @@
 import { detectPigPosition } from './pig.js';
 
-// Returns true if the two pig bodies are physically touching at rest.
-// Pig body is a 1.6 x 1.05 x 1.0 box + a 0.34m snout sphere; the closest
-// two centers can be without any shape overlap along the shortest (Z)
-// axis is ~1.0, and along the longest (X) axis ~1.6. We use 1.35 as a
-// middle-ground oinker threshold — conservative enough that legitimate
-// close-but-separate Pig Outs are not wiped, forgiving enough to catch
-// real shape contact.
-function pigsTouching(a, b) {
+// Distance backup for the Oinker check. The pig physics body is a ~1.47m
+// long box plus a snout sphere out front, so two pigs touching head-to-head
+// have centers ~1.55m apart, while two pigs side-by-side along the narrow
+// axis are ~0.95m apart. Threshold 1.65 catches every realistic touching
+// configuration (including snout-into-rump) while still leaving plenty of
+// daylight for legitimate Pig Outs where the pigs landed close but separated.
+function pigsCloseEnoughToBeTouching(a, b) {
   const dx = a.position.x - b.position.x;
   const dy = a.position.y - b.position.y;
   const dz = a.position.z - b.position.z;
-  return Math.hypot(dx, dy, dz) < 1.35;
+  return Math.hypot(dx, dy, dz) < 1.65;
 }
 
 // Pass the Pigs single-pig positions.
@@ -36,23 +35,31 @@ const POINTS = {
 };
 
 // Evaluate both pigs' final positions and return a scored outcome.
-// Accepts pigStates = [{ position, quaternion, body, dotSide }]
+//
+// pigStates = [{ position, quaternion, body, dotSide }]
+// opts.contacted = true if the physics engine fired a pig-pig collision
+//                  event at any point during the throw (authoritative).
+//
 // Returns { positions: [p1, p2], name, points, special }
 // special can be: 'pig-out', 'oinker', 'piggyback'
-export function scoreRoll(pigStates) {
+export function scoreRoll(pigStates, opts = {}) {
   const [a, b] = pigStates;
+  const contacted = !!opts.contacted;
 
   // Special: piggy-back — one pig resting on top of the other.
   const dx = a.position.x - b.position.x;
   const dz = a.position.z - b.position.z;
   const dy = Math.abs(a.position.y - b.position.y);
   const planar = Math.hypot(dx, dz);
-  if (planar < 1.1 && dy > 0.7) {
+  if (planar < 1.2 && dy > 0.6) {
     return { positions: ['piggyback', 'piggyback'], name: 'Piggy Back!', detail: 'You lose ALL your points.', points: 0, special: 'piggyback' };
   }
 
-  // Special: oinker — pigs in physical contact at rest.
-  if (pigsTouching(a, b)) {
+  // Special: oinker — pigs touched at any point during the roll, OR are
+  // resting close enough to count as touching at the end. Using the physics
+  // collision flag as the primary signal means a brief mid-air bump that
+  // bounced the pigs apart still busts the turn (matching "Makin' Bacon").
+  if (contacted || pigsCloseEnoughToBeTouching(a, b)) {
     return { positions: ['oinker', 'oinker'], name: 'Oinker!', detail: 'Pigs touched — you lose ALL your points.', points: 0, special: 'oinker' };
   }
 

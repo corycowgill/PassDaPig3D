@@ -165,10 +165,8 @@ export class PigScene {
   }
 
   _buildPigs() {
-    // Both pigs must have the painted dot on the same local side for scoring
-    // to work — that way two pigs showing the same face up is a Sider, and
-    // only opposite faces up is a Pig Out. (In the physical game both pigs
-    // are identical.)
+    // Both pigs share the same dotSide so a Sider (same face up) and a Pig
+    // Out (opposite faces up) can both occur — see scoring detection.
     for (let i = 0; i < 2; i++) {
       const dotSide = 'right';
       const mesh = createPigMesh({ dotSide });
@@ -180,13 +178,39 @@ export class PigScene {
 
       this.pigs.push({ mesh, body, dotSide });
     }
+
+    // Track any pig-pig contact during the active roll. cannon-es fires this
+    // body 'collide' event whenever a new contact is made, so a single brief
+    // bounce off the partner pig is enough to flip the flag — exactly the
+    // semantics of "Makin' Bacon / Oinker": if the two pigs touch at any
+    // point during the throw, the turn busts.
+    this._pigsContacted = false;
+    const [p0, p1] = this.pigs;
+    p0.body.addEventListener('collide', (e) => {
+      if (e.body === p1.body) this._pigsContacted = true;
+    });
+    p1.body.addEventListener('collide', (e) => {
+      if (e.body === p0.body) this._pigsContacted = true;
+    });
+
     this.resetPigs();
+  }
+
+  // True if the two pigs touched (per physics collision events) at any point
+  // since the last resetPigs() call. The detector also runs a generous
+  // distance backup at scoring time in game.js — collisions during fast
+  // bounces can occasionally be missed by an event listener, but a touch at
+  // rest is always caught by the proximity check.
+  pigsContactedDuringRoll() {
+    return this._pigsContacted;
   }
 
   // Place pigs on the near side of the table ready to be flung. Slight
   // random tilt so the throw doesn't always start from the same pose —
   // gives the rolls some character right out of the cup.
   resetPigs() {
+    // New roll → forget any prior pig-pig contacts.
+    this._pigsContacted = false;
     const startZ = 7.5;
     const startY = 1.1;
     const separation = 1.7;

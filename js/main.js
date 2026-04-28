@@ -277,7 +277,9 @@ function onRollResolved() {
   waitingForRest = false;
   let result;
   try {
-    result = scoreRoll(scene.getPigStates());
+    const states = scene.getPigStates();
+    const contacted = scene.pigsContactedDuringRoll();
+    result = scoreRoll(states, { contacted });
   } catch (err) {
     console.error('scoreRoll failed:', err);
     result = { positions: ['side-plain', 'side-plain'], name: 'Reroll', detail: 'Scoring hiccup — try again.', points: 0, special: null };
