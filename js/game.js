@@ -66,15 +66,15 @@ export function scoreRoll(pigStates, opts = {}) {
   // Score each pig directly from its rested physics orientation.
   const p1 = detectPigPosition(a.quaternion, a.dotSide);
   const p2 = detectPigPosition(b.quaternion, b.dotSide);
+  const detail = `Pig 1: ${posLabel(p1)} · Pig 2: ${posLabel(p2)}`;
 
   // Pig Out: one on each side (opposite-dot siders).
   const siders = ['side-dot', 'side-plain'];
   if (siders.includes(p1) && siders.includes(p2)) {
     if (p1 === p2) {
-      return { positions: [p1, p2], name: 'Sider', detail: 'Both pigs on the same side.', points: 1, special: null };
-    } else {
-      return { positions: [p1, p2], name: 'Pig Out', detail: 'One pig on each side. Turn ends with 0.', points: 0, special: 'pig-out' };
+      return { positions: [p1, p2], name: 'Sider', detail, points: 1, special: null };
     }
+    return { positions: [p1, p2], name: 'Pig Out', detail, points: 0, special: 'pig-out' };
   }
 
   // Doubles (non-side)
@@ -83,8 +83,8 @@ export function scoreRoll(pigStates, opts = {}) {
     if (table[p1] != null) {
       return {
         positions: [p1, p2],
-        name: `Double ${labelOf(p1)}!`,
-        detail: `Both pigs ${labelOf(p1).toLowerCase()}.`,
+        name: `Double ${comboLabel(p1)}!`,
+        detail,
         points: table[p1],
         special: null,
       };
@@ -95,35 +95,49 @@ export function scoreRoll(pigStates, opts = {}) {
   const s1 = siders.includes(p1) ? 0 : POINTS[p1];
   const s2 = siders.includes(p2) ? 0 : POINTS[p2];
   const total = s1 + s2;
-  const name = describeMixed(p1, p2);
   return {
     positions: [p1, p2],
-    name,
-    detail: `${labelOf(p1)} + ${labelOf(p2)}`,
+    name: describeCombo(p1, p2),
+    detail,
     points: total,
     special: null,
   };
 }
 
-function describeMixed(p1, p2) {
-  const onlyOne = (p) => `${labelOf(p)} + Sider`;
-  const siders = ['side-dot', 'side-plain'];
-  if (siders.includes(p1) && !siders.includes(p2)) return onlyOne(p2);
-  if (siders.includes(p2) && !siders.includes(p1)) return onlyOne(p1);
-  return `${labelOf(p1)} + ${labelOf(p2)}`;
+// Combo title shown big in the result flash. Keeps Sider terminology but
+// avoids the cryptic "side-dot + side-plain" for mixed rolls.
+function describeCombo(p1, p2) {
+  return `${comboLabel(p1)} + ${comboLabel(p2)}`;
 }
 
-export function labelOf(pos) {
+function comboLabel(pos) {
   switch (pos) {
-    case 'side-dot': return 'Sider';
+    case 'side-dot':
     case 'side-plain': return 'Sider';
-    case 'razorback': return 'Razorback';
-    case 'trotter': return 'Trotter';
-    case 'snouter': return 'Snouter';
-    case 'jowler': return 'Leaning Jowler';
-    default: return pos;
+    case 'razorback':  return 'Razorback';
+    case 'trotter':    return 'Trotter';
+    case 'snouter':    return 'Snouter';
+    case 'jowler':     return 'Leaning Jowler';
+    default:           return pos;
   }
 }
+
+// Per-pig label for the result detail line. Distinguishes "Side (dot up)"
+// from "Side (plain up)" so the player can verify each pig's call against
+// what they see on the table.
+export function posLabel(pos) {
+  switch (pos) {
+    case 'side-dot':   return 'Side (dot up)';
+    case 'side-plain': return 'Side (plain up)';
+    case 'razorback':  return 'Razorback';
+    case 'trotter':    return 'Trotter';
+    case 'snouter':    return 'Snouter';
+    case 'jowler':     return 'Leaning Jowler';
+    default:           return pos;
+  }
+}
+
+export const labelOf = comboLabel;
 
 // ---- Game state / turn flow ----
 export const PLAYER_COLORS = [

@@ -1,7 +1,10 @@
 import * as THREE from 'three';
 import * as CANNON from 'cannon-es';
 
-// Pig proportions (in meters-ish units; table ~ 20 across)
+// Pig proportions. The visual mesh is sized so the body sphere, snout, and
+// stubby legs all fit inside (or flush with) the physics box's local extents
+// — that way every face-flat physics rest reads as the matching pose visually
+// (Trotter shows feet on the felt, Razorback shows back on the felt, etc.).
 export const PIG = {
   bodyLen: 1.6,
   bodyH: 1.05,
@@ -10,7 +13,7 @@ export const PIG = {
   snoutR: 0.32,
   snoutLen: 0.28,
   legR: 0.13,
-  legH: 0.55,
+  legH: 0.22,   // short stubs that don't punch through the felt in Trotter
 };
 
 const PINK = 0xffb3c1;
@@ -103,13 +106,17 @@ export function createPigMesh({ dotSide = 'right' } = {}) {
     group.add(ear);
   }
 
-  // Legs (4 cylinders under body)
+  // Legs: short stubs whose bottoms sit at the same local Y as the physics
+  // box bottom (-PIG.bodyH * 0.46). The leg center sits half-stub-height
+  // above that, so when the pig rests in Trotter pose the feet land flush on
+  // the felt instead of poking through.
   const legGeom = new THREE.CylinderGeometry(PIG.legR, PIG.legR * 0.9, PIG.legH, 10);
+  const legY = -PIG.bodyH * 0.46 + PIG.legH * 0.5;
   const legPositions = [
-    [PIG.bodyLen * 0.28, -PIG.bodyH * 0.5 - PIG.legH * 0.25, PIG.bodyW * 0.32],
-    [PIG.bodyLen * 0.28, -PIG.bodyH * 0.5 - PIG.legH * 0.25, -PIG.bodyW * 0.32],
-    [-PIG.bodyLen * 0.3, -PIG.bodyH * 0.5 - PIG.legH * 0.25, PIG.bodyW * 0.32],
-    [-PIG.bodyLen * 0.3, -PIG.bodyH * 0.5 - PIG.legH * 0.25, -PIG.bodyW * 0.32],
+    [ PIG.bodyLen * 0.28, legY,  PIG.bodyW * 0.32],
+    [ PIG.bodyLen * 0.28, legY, -PIG.bodyW * 0.32],
+    [-PIG.bodyLen * 0.3,  legY,  PIG.bodyW * 0.32],
+    [-PIG.bodyLen * 0.3,  legY, -PIG.bodyW * 0.32],
   ];
   for (const p of legPositions) {
     const leg = new THREE.Mesh(legGeom, pinkDark);
@@ -195,19 +202,25 @@ export function createPigBody(material) {
     sleepTimeLimit: 0.35,
   });
 
+  // Half-extents tuned to match the visual ellipsoid body so face-flat
+  // physics rests look right on screen. X dimension is bigger than Y is
+  // bigger than Z, which means the side faces (X×Y) are the largest face,
+  // then top/bottom (X×Z), then ends (Y×Z) — distribution: Sider > Razor
+  // /Trotter > Snouter, matching real Pass the Pigs frequencies.
   const coreHalf = new CANNON.Vec3(
-    PIG.bodyLen * 0.46,
-    PIG.bodyH * 0.46,
-    PIG.bodyW * 0.46
+    PIG.bodyLen * 0.5,
+    PIG.bodyH * 0.5,
+    PIG.bodyW * 0.5
   );
   body.addShape(new CANNON.Box(coreHalf));
 
   // Snout sphere placed past the front face of the box so it never lifts
-  // the body off a face during a clean rest.
-  const snoutOffsetX = PIG.bodyLen * 0.46 + PIG.snoutR * 0.6;
+  // the body off a face during a clean rest. Slightly tucked under (-Y) so
+  // the pig tips forward off the snout when it tries to balance there.
+  const snoutOffsetX = PIG.bodyLen * 0.5 + PIG.snoutR * 0.5;
   body.addShape(
     new CANNON.Sphere(PIG.snoutR),
-    new CANNON.Vec3(snoutOffsetX, -0.05, 0)
+    new CANNON.Vec3(snoutOffsetX, -0.08, 0)
   );
 
   return body;
