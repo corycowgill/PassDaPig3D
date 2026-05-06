@@ -116,10 +116,11 @@ export class PigScene {
   }
 
   _buildPhysics() {
-    // Gravity slightly heavier than Earth so rolls settle quickly without
-    // floaty hangtime, but light enough that the pigs can actually tumble
-    // a few times after landing.
-    this.world = new CANNON.World({ gravity: new CANNON.Vec3(0, -14, 0) });
+    // Gravity heavier than Earth so the new heavier compound pigs (trunk +
+    // head + snout + tail-bump + 4 legs) still settle quickly. Light enough
+    // that the pigs tumble a few times after first contact instead of
+    // pancaking on impact.
+    this.world = new CANNON.World({ gravity: new CANNON.Vec3(0, -16, 0) });
     this.world.broadphase = new CANNON.SAPBroadphase(this.world);
     this.world.allowSleep = true;
     this.world.defaultContactMaterial.friction = 0.3;
@@ -212,7 +213,10 @@ export class PigScene {
     // New roll → forget any prior pig-pig contacts.
     this._pigsContacted = false;
     const startZ = 7.5;
-    const startY = 1.1;
+    // Start above the felt high enough to clear the legs (which now extend
+    // ~0.79 below the body center) so the first frame of the throw isn't
+    // already inside the table.
+    const startY = 1.3;
     const separation = 1.7;
     for (let i = 0; i < this.pigs.length; i++) {
       const { body } = this.pigs[i];
@@ -250,10 +254,14 @@ export class PigScene {
     // Rightward axis used to scatter the two pigs apart in flight.
     const lateral = new THREE.Vector3(-worldDir.z, 0, worldDir.x).normalize();
 
-    const baseSpeed = 6.5 + 6.5 * p;
-    const upKick = 3.0 + 2.6 * p;
-    const tumble = 9 + 14 * p;
-    const wobble = 2 + 5 * p;
+    // Tuned for the new compound body (heavier moment of inertia from the
+    // distributed leg/snout/tail shapes). More tumble, slightly faster
+    // forward toss, gentler upward arc so the pigs hit the felt tumbling
+    // sideways rather than peaking high and slapping straight down.
+    const baseSpeed = 7.0 + 7.5 * p;
+    const upKick = 2.6 + 2.2 * p;
+    const tumble = 11 + 17 * p;
+    const wobble = 1.8 + 4.5 * p;
 
     for (let i = 0; i < this.pigs.length; i++) {
       const { body } = this.pigs[i];

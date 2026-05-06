@@ -1,10 +1,12 @@
 import * as THREE from 'three';
 import * as CANNON from 'cannon-es';
 
-// Pig proportions. The visual mesh is sized so the body sphere, snout, and
-// stubby legs all fit inside (or flush with) the physics box's local extents
-// — that way every face-flat physics rest reads as the matching pose visually
-// (Trotter shows feet on the felt, Razorback shows back on the felt, etc.).
+// Pig proportions. Visual mesh and physics compound are co-designed against
+// these so a face-flat physics rest matches the pig you see on screen:
+// — Trotter: stands on the four leg shapes (body floats above the felt).
+// — Razorback: trunk's +Y face on the felt, legs sticking straight up.
+// — Sider: trunk's ±Z face on the felt, legs out sideways like outriggers.
+// — Snouter: balanced on the snout sphere with the tail end up.
 export const PIG = {
   bodyLen: 1.6,
   bodyH: 1.05,
@@ -13,7 +15,7 @@ export const PIG = {
   snoutR: 0.32,
   snoutLen: 0.28,
   legR: 0.13,
-  legH: 0.22,   // short stubs that don't punch through the felt in Trotter
+  legH: 0.45,
 };
 
 const PINK = 0xffb3c1;
@@ -106,17 +108,22 @@ export function createPigMesh({ dotSide = 'right' } = {}) {
     group.add(ear);
   }
 
-  // Legs: short stubs whose bottoms sit at the same local Y as the physics
-  // box bottom (-PIG.bodyH * 0.46). The leg center sits half-stub-height
-  // above that, so when the pig rests in Trotter pose the feet land flush on
-  // the felt instead of poking through.
-  const legGeom = new THREE.CylinderGeometry(PIG.legR, PIG.legR * 0.9, PIG.legH, 10);
-  const legY = -PIG.bodyH * 0.46 + PIG.legH * 0.5;
+  // Legs: each leg's top is anchored inside the trunk and its bottom sits at
+  // the bottom of the leg physics shape (TRUNK_BOTTOM - LEG_HEIGHT). Same
+  // values are used in createPigBody() so the visual leg and the physics
+  // leg occupy the same local-space cylinder. Trotter rests on these legs
+  // with the trunk floating above the felt.
+  const legGeom = new THREE.CylinderGeometry(PIG.legR, PIG.legR * 0.9, PIG.legH, 12);
+  const trunkBottomY = -PIG.bodyH * 0.40;
+  const legY = trunkBottomY - PIG.legH * 0.5 + 0.05; // tuck slightly into trunk
+  const legXFront = PIG.bodyLen * 0.27;
+  const legXRear  = -PIG.bodyLen * 0.30;
+  const legZ      = PIG.bodyW * 0.25;
   const legPositions = [
-    [ PIG.bodyLen * 0.28, legY,  PIG.bodyW * 0.32],
-    [ PIG.bodyLen * 0.28, legY, -PIG.bodyW * 0.32],
-    [-PIG.bodyLen * 0.3,  legY,  PIG.bodyW * 0.32],
-    [-PIG.bodyLen * 0.3,  legY, -PIG.bodyW * 0.32],
+    [legXFront, legY,  legZ],
+    [legXFront, legY, -legZ],
+    [legXRear,  legY,  legZ],
+    [legXRear,  legY, -legZ],
   ];
   for (const p of legPositions) {
     const leg = new THREE.Mesh(legGeom, pinkDark);
@@ -184,44 +191,79 @@ export function tintPig(group, tint) {
   });
 }
 
-// Physics body. A near-full-size core box does the heavy lifting so the pig
-// rests cleanly on its faces (sides → Sider, top → Razorback, bottom →
-// Trotter). A single snout sphere out front sticks past the box so the pig
-// tips forward during tumble and Snouter is physically reachable. Earlier
-// versions wrapped the box in big rump/shoulder spheres, but those caps
-// extended beyond every box face and the pig perched on sphere curves at
-// rest — most rolls came out as Leaning Jowler instead of clean siders.
+// Physics body. A compound that mirrors the visible pig: a trunk box, a
+// head sphere, a snout sphere out front, a small tail bump for asymmetric
+// tumble, and four leg stubs underneath. The legs are real collision shapes
+// so Trotter is genuinely the pig standing on its feet (tiny footprint, hard
+// to land but stable when it does), Razorback is the pig on its back with
+// the legs sticking up, and Sider is the pig on a wide side face with the
+// legs out as outriggers — exactly how a Pass the Pigs pig falls. The
+// asymmetric tumble axis (snout heavier on one end, tail-bump on the other)
+// also breaks the symmetric box behavior of older builds: rolls now wobble
+// instead of slap-flat-and-stop.
 export function createPigBody(material) {
   const body = new CANNON.Body({
-    mass: 0.75,
+    mass: 0.7,
     material,
-    angularDamping: 0.06,
-    linearDamping: 0.10,
+    angularDamping: 0.04,
+    linearDamping: 0.09,
     allowSleep: true,
     sleepSpeedLimit: 0.28,
     sleepTimeLimit: 0.35,
   });
 
-  // Half-extents tuned to match the visual ellipsoid body so face-flat
-  // physics rests look right on screen. X dimension is bigger than Y is
-  // bigger than Z, which means the side faces (X×Y) are the largest face,
-  // then top/bottom (X×Z), then ends (Y×Z) — distribution: Sider > Razor
-  // /Trotter > Snouter, matching real Pass the Pigs frequencies.
-  const coreHalf = new CANNON.Vec3(
-    PIG.bodyLen * 0.5,
-    PIG.bodyH * 0.5,
-    PIG.bodyW * 0.5
+  // Trunk — slightly smaller than the visual ellipsoid so the body sphere
+  // hides the box on screen, but large enough that side/top/bottom faces
+  // dominate the rest distribution.
+  const trunkHalf = new CANNON.Vec3(
+    PIG.bodyLen * 0.42,
+    PIG.bodyH * 0.40,
+    PIG.bodyW * 0.40
   );
-  body.addShape(new CANNON.Box(coreHalf));
+  body.addShape(new CANNON.Box(trunkHalf));
+  const trunkBottomY = -trunkHalf.y;
 
-  // Snout sphere placed past the front face of the box so it never lifts
-  // the body off a face during a clean rest. Slightly tucked under (-Y) so
-  // the pig tips forward off the snout when it tries to balance there.
-  const snoutOffsetX = PIG.bodyLen * 0.5 + PIG.snoutR * 0.5;
+  // Head sphere (tucked into the front of the trunk).
   body.addShape(
-    new CANNON.Sphere(PIG.snoutR),
-    new CANNON.Vec3(snoutOffsetX, -0.08, 0)
+    new CANNON.Sphere(PIG.headR * 0.78),
+    new CANNON.Vec3(PIG.bodyLen * 0.40, 0.05, 0)
   );
+
+  // Snout sphere — out in front and slightly tucked below center. Past the
+  // trunk's front face so it doesn't lift the body off a side rest, but its
+  // ground-contact angle is what enables Snouter and Leaning Jowler.
+  body.addShape(
+    new CANNON.Sphere(PIG.snoutR * 0.95),
+    new CANNON.Vec3(PIG.bodyLen * 0.55, -0.08, 0)
+  );
+
+  // Tiny tail bump at the rump for asymmetry. Doesn't extend past the
+  // trunk on its own — the trunk rear face still rests cleanly — but its
+  // mass-distribution effect biases the tumble.
+  body.addShape(
+    new CANNON.Sphere(0.12),
+    new CANNON.Vec3(-PIG.bodyLen * 0.48, PIG.bodyH * 0.18, 0)
+  );
+
+  // Four leg stubs as physics shapes. Cannon-es doesn't ship a Cylinder
+  // primitive that plays nice with general collision, so we use small
+  // boxes with a square cross-section — close enough for a stub that
+  // mostly contacts the felt at its bottom face.
+  const legHalf = new CANNON.Vec3(PIG.legR, PIG.legH * 0.5, PIG.legR);
+  // Tuck each leg ~0.05 into the trunk bottom so there's no visible seam.
+  const legCenterY = trunkBottomY - legHalf.y + 0.05;
+  const legXFront = PIG.bodyLen * 0.27;
+  const legXRear  = -PIG.bodyLen * 0.30;
+  const legZ      = PIG.bodyW * 0.25;
+  const legPositions = [
+    [legXFront, legCenterY,  legZ],
+    [legXFront, legCenterY, -legZ],
+    [legXRear,  legCenterY,  legZ],
+    [legXRear,  legCenterY, -legZ],
+  ];
+  for (const [x, y, z] of legPositions) {
+    body.addShape(new CANNON.Box(legHalf), new CANNON.Vec3(x, y, z));
+  }
 
   return body;
 }
